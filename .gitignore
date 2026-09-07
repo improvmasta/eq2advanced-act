@@ -1,0 +1,27 @@
+## Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+
+## Visual Studio
+.vs/
+*.user
+*.suo
+*.userprefs
+
+## Rider
+.idea/
+
+## NuGet
+*.nupkg
+packages/
+
+## Fetched at build time (not ours to commit)
+Thirdparty/
+
+## Local development automation
+AGENTS.md
+CLAUDE.md
+codex.md
+ship.sh

@@ -1,0 +1,28 @@
+<!--
+  Exercises LogTail against synthetic raid-shaped logs on the DEV HOST.
+
+  The plugin itself can only be compiled here, never run — that needs Windows
+  and ACT. But LogTail is the part where a mistake silently costs a raid its
+  parse, and it touches nothing but System.IO, so it can be linked into a plain
+  console app and driven hard. That is what this is.
+
+  Deliberately NOT part of build.sh's DLL output, and not a NuGet dependency of
+  anything ACT loads: it compiles the same source file under net8.0 and runs it.
+  See CLAUDE.md for how to run it.
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <AssemblyName>tailcheck</AssemblyName>
+    <RootNamespace>tailcheck</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="../../EQ2Advanced/Ingest/LogTail.cs" />
+    <Compile Include="../../EQ2Advanced/Ingest/ChatFilter.cs" />
+    <Compile Include="../../EQ2Advanced/Ingest/LogCursorStore.cs" />
+  </ItemGroup>
+</Project>

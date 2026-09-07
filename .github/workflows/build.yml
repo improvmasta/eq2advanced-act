@@ -1,0 +1,39 @@
+name: build
+
+on:
+  push:
+    branches: [ master, main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The genuine, strong-named ACT. The plugin must be compiled against it or
+      # ACT refuses to load the result (HRESULT 0x80131040) — see
+      # tools/fetch-act.sh. The script verifies the download's SHA256.
+      - name: Fetch ACT
+        shell: bash
+        run: bash tools/fetch-act.sh
+
+      - name: Build plugin
+        shell: bash
+        run: bash build.sh
+
+      - name: Upload EQ2Advanced.dll
+        uses: actions/upload-artifact@v4
+        with:
+          name: EQ2Advanced
+          path: EQ2Advanced/bin/Release/EQ2Advanced.dll
+          if-no-files-found: error
+
+      - name: Attach DLL to release (on v* tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            EQ2Advanced/bin/Release/EQ2Advanced.dll

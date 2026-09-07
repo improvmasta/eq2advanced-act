@@ -1,0 +1,75 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    eq2advanced uploader - an Advanced Combat Tracker plugin for EverQuest II.
+
+    Targets .NET Framework 4.8 (what ACT runs on). The UI is WinForms, which ACT
+    already hosts, so the plugin tab is added directly with no ElementHost or
+    WPF dispatcher to bootstrap.
+
+    ACTPath is the folder holding "Advanced Combat Tracker.exe". It defaults to
+    Thirdparty/ACT, which tools/fetch-act.sh downloads - see that script for why
+    the plugin MUST be compiled against the genuine strong-named exe and not a
+    stand-in. Override it to build against an installed ACT instead:
+
+        dotnet build -c Release -p:ACTPath="C:\Program Files (x86)\Advanced Combat Tracker"
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>Library</OutputType>
+    <AssemblyName>EQ2Advanced</AssemblyName>
+    <RootNamespace>EQ2Advanced</RootNamespace>
+    <LangVersion>9.0</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+
+    <AssemblyTitle>eq2advanced uploader</AssemblyTitle>
+    <Product>eq2advanced</Product>
+    <Description>Sends EverQuest II combat logs to eq2advanced.com as you raid.</Description>
+    <Authors>EQ2Advanced</Authors>
+    <Version>0.2.3</Version>
+
+    <ACTPath Condition="'$(ACTPath)' == ''">$(MSBuildThisFileDirectory)..\Thirdparty\ACT</ACTPath>
+  </PropertyGroup>
+
+  <!-- The 4.8 reference assemblies as a package rather than a machine-wide
+       developer pack. This is what lets the plugin be COMPILED (not run) on a
+       box without the .NET Framework installed. Windows builds are unaffected. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <!-- Framework assemblies, by simple name from the 4.8 targeting pack.
+       System.Web.Extensions provides JavaScriptSerializer, so settings and the
+       API payloads need no external JSON package to ship or version-match. -->
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Security" />
+  </ItemGroup>
+
+  <!-- ACT host. Not copied to output (Private=false); supplied by ACT at runtime.
+       SpecificVersion=false so a raider running a different ACT build is fine:
+       ACT's exe.config redirects 2.0.0.0-3.65535.65535.65535 to whatever it is,
+       for this assembly identity. -->
+  <ItemGroup>
+    <Reference Include="Advanced Combat Tracker">
+      <HintPath>$(ACTPath)\Advanced Combat Tracker.exe</HintPath>
+      <SpecificVersion>false</SpecificVersion>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="CheckACT" BeforeTargets="BeforeBuild">
+    <Error Condition="!Exists('$(ACTPath)\Advanced Combat Tracker.exe')"
+           Text="No ACT at '$(ACTPath)'. Run tools/fetch-act.sh (or build.ps1 on Windows), or pass -p:ACTPath=&lt;your ACT folder&gt;." />
+  </Target>
+
+</Project>
