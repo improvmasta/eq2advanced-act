@@ -18,7 +18,14 @@ namespace EQ2Advanced
     /// </summary>
     public class EQ2AdvancedPlugin : IActPluginV1
     {
-        public const string Version = "0.2.3";
+        /// <summary>The stable uploader's version. The multi-log test track
+        /// versions independently (<see cref="Channel.Version"/>) so a test
+        /// build can move without putting an update pill in front of everybody
+        /// running the stable one.</summary>
+        public const string StableVersion = "0.2.3";
+
+        /// <summary>What THIS build calls itself, on the tab and on the wire.</summary>
+        public const string Version = Channel.Version;
 
         private Label _actStatus;
         private Settings _settings;
@@ -28,7 +35,7 @@ namespace EQ2Advanced
         public void InitPlugin(TabPage pluginScreenSpace, Label pluginStatusText)
         {
             _actStatus = pluginStatusText;
-            pluginScreenSpace.Text = "eq2advanced";
+            pluginScreenSpace.Text = Channel.TabName;
 
             // Anything thrown out of here leaves ACT showing an enabled plugin
             // with an empty tab and no clue why. Catch it and PUT IT ON THE TAB:

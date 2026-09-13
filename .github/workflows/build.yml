@@ -31,9 +31,17 @@ jobs:
           path: EQ2Advanced/bin/Release/EQ2Advanced.dll
           if-no-files-found: error
 
+      - name: Upload EQ2AdvancedMulti.dll
+        uses: actions/upload-artifact@v4
+        with:
+          name: EQ2AdvancedMulti
+          path: EQ2AdvancedMulti/bin/Release/EQ2AdvancedMulti.dll
+          if-no-files-found: error
+
       - name: Attach DLL to release (on v* tag)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
             EQ2Advanced/bin/Release/EQ2Advanced.dll
+            EQ2AdvancedMulti/bin/Release/EQ2AdvancedMulti.dll

@@ -24,5 +24,6 @@
     <Compile Include="../../EQ2Advanced/Ingest/LogTail.cs" />
     <Compile Include="../../EQ2Advanced/Ingest/ChatFilter.cs" />
     <Compile Include="../../EQ2Advanced/Ingest/LogCursorStore.cs" />
+    <Compile Include="../../EQ2Advanced/Ingest/Participation.cs" />
   </ItemGroup>
 </Project>

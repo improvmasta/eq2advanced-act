@@ -110,6 +110,13 @@ namespace EQ2Advanced.Ingest
             catch (AbandonedMutexException) { }
         }
 
+        /// <summary>The per-logfile identity every durable artefact for that
+        /// log is filed under — its cursor, and its lease
+        /// (<see cref="LogLease"/>). Exposed so the two cannot drift apart:
+        /// a lease keyed differently from the cursor it protects would let two
+        /// processes hold "different" logs that are the same file.</summary>
+        public static string KeyFor(string path) => PathKey(path);
+
         private static string PathKey(string path)
         {
             string canonical;

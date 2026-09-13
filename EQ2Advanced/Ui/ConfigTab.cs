@@ -38,6 +38,15 @@ namespace EQ2Advanced.Ui
         private Label _importStatus;
         private CancellationTokenSource _importCancel;
 
+        // --- multi-log (test track only; see Core/Channel.cs) ---
+        private CheckBox _multiLog;
+        private CheckBox _onlyWhenFighting;
+        private ListView _logs;
+        private System.Windows.Forms.Timer _logRefresh;
+        /// <summary>Set while the list is being rebuilt, so redrawing a row does
+        /// not read as the user ticking it.</summary>
+        private bool _rebuilding;
+
         private int? _sessionId;
         private string _account;
 
@@ -53,7 +62,11 @@ namespace EQ2Advanced.Ui
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) _uploader.StatusChanged -= OnUploaderStatus;
+            if (disposing)
+            {
+                _uploader.StatusChanged -= OnUploaderStatus;
+                if (_logRefresh != null) { _logRefresh.Stop(); _logRefresh.Dispose(); }
+            }
             base.Dispose(disposing);
         }
 
@@ -193,11 +206,185 @@ namespace EQ2Advanced.Ui
             backfill.Controls.Add(_importStatus);
 
             root.Controls.Add(backfill);
+            // Compiled into BOTH builds and only shown in one. `Channel.MultiLog`
+            // is a constant, so the stable build warns that the call is
+            // unreachable — which is the point: the panel still type-checks
+            // against every change made to the stable half of this file.
+#pragma warning disable 162
+            if (Channel.MultiLog) root.Controls.Add(BuildMultiLog());
+#pragma warning restore 162
             root.Controls.Add(uploading);
             root.Controls.Add(pairing);
             Controls.Add(root);
 
             ApplyPairedState();
+        }
+
+        /// <summary>
+        /// The test track's own panel: which logs were found, what each one is
+        /// doing, and the two switches that decide it.
+        ///
+        /// It exists because multi-log upload is the one thing in this plugin a
+        /// raider cannot verify by looking at the site — four characters that
+        /// all logged the same pull look identical to one character logging it,
+        /// until you notice the numbers. The list says, per log, whether the
+        /// plugin is sending it, watching it, or deliberately leaving it alone,
+        /// and why.
+        /// </summary>
+        private GroupBox BuildMultiLog()
+        {
+            var group = new GroupBox { Text = "Logs on this PC (test build)",
+                                       Dock = DockStyle.Top, Height = 258 };
+
+            _logs = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                CheckBoxes = true,
+                FullRowSelect = true,
+                HeaderStyle = ColumnHeaderStyle.Nonclickable,
+                MultiSelect = false,
+            };
+            _logs.Columns.Add("Character", 110);
+            _logs.Columns.Add("State", 340);
+            _logs.Columns.Add("Lines sent", 90, HorizontalAlignment.Right);
+            _logs.ItemChecked += OnLogChecked;
+
+            var buttons = new Panel { Dock = DockStyle.Bottom, Height = 30 };
+            var addFolder = new Button { Text = "Add log folder...", Dock = DockStyle.Left,
+                                         Width = 140 };
+            addFolder.Click += OnAddLogFolder;
+            buttons.Controls.Add(addFolder);
+
+            _onlyWhenFighting = new CheckBox
+            {
+                Text = "Only upload a character while they are actually fighting",
+                Dock = DockStyle.Top,
+                Height = 24,
+                Checked = _settings.OnlyWhenFighting,
+            };
+            _onlyWhenFighting.CheckedChanged += (s, e) =>
+            {
+                _settings.OnlyWhenFighting = _onlyWhenFighting.Checked;
+                _settings.Save();
+            };
+            _multiLog = new CheckBox
+            {
+                Text = "Follow every EverQuest II log on this PC, not just ACT's",
+                Dock = DockStyle.Top,
+                Height = 24,
+                Checked = _settings.MultiLog,
+            };
+            _multiLog.CheckedChanged += OnMultiLogToggled;
+
+            group.Controls.Add(_logs);
+            group.Controls.Add(buttons);
+            group.Controls.Add(Note(
+                "Nothing is thrown away while a character is being watched: the log "
+                + "file is the queue, so the moment they swing, everything since is "
+                + "sent — the opening of the pull included."));
+            group.Controls.Add(_onlyWhenFighting);
+            group.Controls.Add(_multiLog);
+
+            _logRefresh = new System.Windows.Forms.Timer { Interval = 1000 };
+            _logRefresh.Tick += (s, e) => RefreshLogs();
+            _logRefresh.Start();
+            return group;
+        }
+
+        /// <summary>Redraw the log list from the uploader's own view of it.
+        /// Rows are matched on path so ticking a box does not fight the timer.</summary>
+        private void RefreshLogs()
+        {
+            if (_logs == null || IsDisposed) return;
+            var found = _uploader.Discovered;
+            var statuses = new System.Collections.Generic.Dictionary<string, LogStatus>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (var status in _uploader.LogStatuses()) statuses[status.Path] = status;
+
+            _rebuilding = true;
+            try
+            {
+                _logs.BeginUpdate();
+                var seen = new System.Collections.Generic.HashSet<string>(
+                    StringComparer.OrdinalIgnoreCase);
+                foreach (var log in found)
+                {
+                    seen.Add(log.Path);
+                    var item = Row(log.Path);
+                    if (item == null)
+                    {
+                        item = new ListViewItem(log.Character) { Tag = log.Path };
+                        item.SubItems.Add("");
+                        item.SubItems.Add("");
+                        _logs.Items.Add(item);
+                    }
+                    var uploads = _settings.Uploads(log.Character);
+                    if (item.Checked != uploads) item.Checked = uploads;
+                    item.Text = log.Character;
+
+                    LogStatus status;
+                    var known = statuses.TryGetValue(log.Path, out status);
+                    item.SubItems[1].Text = !uploads ? "Excluded"
+                        : known ? status.Message
+                        : log.Stale ? "Quiet — nothing has been written for a while"
+                        : log.Live ? "Starting..."
+                        : "Idle";
+                    item.SubItems[2].Text = known && status.LinesSent > 0
+                        ? status.LinesSent.ToString("N0") : "";
+                    item.ForeColor = known && status.IsError ? Color.Firebrick
+                                   : uploads ? SystemColors.ControlText
+                                   : SystemColors.GrayText;
+                }
+                for (var i = _logs.Items.Count - 1; i >= 0; i--)
+                    if (!seen.Contains((string)_logs.Items[i].Tag)) _logs.Items.RemoveAt(i);
+            }
+            finally
+            {
+                _logs.EndUpdate();
+                _rebuilding = false;
+            }
+        }
+
+        private ListViewItem Row(string path)
+        {
+            foreach (ListViewItem item in _logs.Items)
+                if (string.Equals((string)item.Tag, path, StringComparison.OrdinalIgnoreCase))
+                    return item;
+            return null;
+        }
+
+        private void OnLogChecked(object sender, ItemCheckedEventArgs e)
+        {
+            if (_rebuilding) return;
+            _settings.SetUploads(e.Item.Text, e.Item.Checked);
+        }
+
+        private void OnMultiLogToggled(object sender, EventArgs e)
+        {
+            _settings.MultiLog = _multiLog.Checked;
+            _settings.Save();
+            // The choice is made once per run of the worker, so an uploader that
+            // is already going has to be turned over for it to take.
+            if (_uploader.IsRunning)
+            {
+                _uploader.Stop(closeSession: false);
+                _uploader.Start();
+            }
+        }
+
+        private void OnAddLogFolder(object sender, EventArgs e)
+        {
+            using (var dialog = new FolderBrowserDialog
+            {
+                Description = "Pick an EverQuest II logs folder (a second install, say).",
+                ShowNewFolderButton = false,
+            })
+            {
+                if (dialog.ShowDialog(this) != DialogResult.OK) return;
+                _settings.AddLogFolder(dialog.SelectedPath);
+                RefreshLogs();
+            }
         }
 
         private static void Open(string url)

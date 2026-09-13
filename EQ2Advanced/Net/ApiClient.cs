@@ -67,7 +67,12 @@ namespace EQ2Advanced.Net
             req.Method = method;
             req.Timeout = 30000;
             req.ReadWriteTimeout = 30000;
-            req.UserAgent = "eq2advanced-act/" + EQ2AdvancedPlugin.Version;
+            // The product token is the CHANNEL (Core/Channel.cs): the site
+            // recognises the stable uploader's agent strictly, and a test build
+            // reporting that name would put its own version number into the
+            // update pill's comparison and tell every stable install it was
+            // behind a build they cannot download.
+            req.UserAgent = Channel.UserAgentProduct + "/" + EQ2AdvancedPlugin.Version;
             req.Headers["Authorization"] = "Bearer " + _settings.Token;
             req.KeepAlive = true;
             return req;

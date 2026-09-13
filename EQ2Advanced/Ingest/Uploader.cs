@@ -58,6 +58,14 @@ namespace EQ2Advanced.Ingest
         private CancellationTokenSource _cancel;
         private string _activeCharacter;
 
+        // --- multi-log (test track); see Core/Channel.cs and Ingest/LogStream.cs ---
+        private readonly string _cursorDirectory;
+        private readonly Dictionary<string, LogStream> _streams =
+            new Dictionary<string, LogStream>(StringComparer.OrdinalIgnoreCase);
+        private List<DiscoveredLog> _discovered = new List<DiscoveredLog>();
+        private readonly Dictionary<string, long> _lengths =
+            new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+
         private readonly object _lock = new object();
         private UploaderStatus _status = new UploaderStatus();
 
@@ -68,8 +76,9 @@ namespace EQ2Advanced.Ingest
         {
             _settings = settings;
             _api = api;
-            var configDir = Path.GetDirectoryName(JsonStore.ConfigPath);
-            _cursors = new LogCursorStore(Path.Combine(configDir, "EQ2Advanced.Cursors"));
+            // Shared by every channel on purpose — see JsonStore.CursorDirectory.
+            _cursorDirectory = JsonStore.CursorDirectory;
+            _cursors = new LogCursorStore(_cursorDirectory);
         }
 
         /// <summary>Read live, not captured once at Run()/BackfillOne() start —
@@ -111,7 +120,7 @@ namespace EQ2Advanced.Ingest
                 _status.Running = true;
             }
             _cancel = new CancellationTokenSource();
-            _thread = new Thread(() => Run(_cancel.Token))
+            _thread = new Thread(() => Loop(_cancel.Token))
             {
                 IsBackground = true,
                 Name = "eq2advanced-uploader",
@@ -136,13 +145,230 @@ namespace EQ2Advanced.Ingest
             if (_cancel != null) _cancel.Cancel();
             if (thread != null && thread.IsAlive && !thread.Join(TimeSpan.FromSeconds(5)))
                 Report("Uploader did not stop cleanly.", true);
-            if (closeSession)
+            if (MultiLogActive)
+            {
+                // Every followed log is its own session on the site, so every
+                // one of them has to be told the night is over. The worker
+                // thread has already exited, so the streams are stopped here
+                // rather than from inside it.
+                StopAllStreams(closeSession);
+            }
+            else if (closeSession)
             {
                 try { _api.Done(_activeCharacter ?? _settings.CharacterName,
                                 CancellationToken.None); }
                 catch (Exception ex) { Report("Could not close the session: " + ex.Message, true); }
             }
             Report(closeSession ? "Stopped. The raid is finished on the site." : "Stopped.");
+        }
+
+        /// <summary>Is this build following every log, or the one ACT hands it?
+        /// Both halves matter: the stable DLL cannot do it at all, and the test
+        /// build's own switch turns it off — which is what makes the test build
+        /// safe to leave installed while raiding normally.</summary>
+        public bool MultiLogActive => Channel.MultiLog && _settings.MultiLog;
+
+        /// <summary>Every log found on the last scan, streaming or not, so the
+        /// tab can list the ones it is deliberately leaving alone.</summary>
+        public List<DiscoveredLog> Discovered { get { lock (_lock) return _discovered; } }
+
+        /// <summary>What each followed log is doing.</summary>
+        public List<LogStatus> LogStatuses()
+        {
+            var streams = new List<LogStream>();
+            lock (_lock) streams.AddRange(_streams.Values);
+            var out_ = new List<LogStatus>();
+            foreach (var stream in streams) out_.Add(stream.Snapshot());
+            out_.Sort((a, b) => string.Compare(a.Character, b.Character,
+                                               StringComparison.OrdinalIgnoreCase));
+            return out_;
+        }
+
+        private void Loop(CancellationToken cancel)
+        {
+            if (MultiLogActive) RunMulti(cancel);
+            else Run(cancel);
+        }
+
+        /// <summary>
+        /// The supervisor: find the logs, start a <see cref="LogStream"/> for
+        /// each one worth following, and keep the set current as clients open
+        /// and close. It sends nothing itself.
+        ///
+        /// Rescanning rather than watching the filesystem is deliberate. A
+        /// FileSystemWatcher fires on the directory entry, which is exactly what
+        /// NTFS does not keep current for a file the game is holding open (see
+        /// <see cref="LogDiscovery.TrueLength"/>), so it is a hint at best and
+        /// silent on network shares. A scan is a handful of opens every few
+        /// seconds and it cannot miss anything.
+        /// </summary>
+        private void RunMulti(CancellationToken cancel)
+        {
+            Report("Looking for EverQuest II logs...");
+            try
+            {
+                while (!cancel.IsCancellationRequested)
+                {
+                    var found = LogDiscovery.Scan(_settings.LogFolders, _lengths);
+                    lock (_lock) _discovered = found;
+
+                    // One stream per CHARACTER, not merely per file. Two servers
+                    // can hold the same name, and both logs would resolve to one
+                    // `(token, character)` stream on the server — two characters'
+                    // lines interleaved into one session, which no dedupe can
+                    // untangle afterwards. First one found keeps the name.
+                    var claimed = new Dictionary<string, string>(
+                        StringComparer.OrdinalIgnoreCase);
+                    var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                    foreach (var log in found)
+                    {
+                        if (!_settings.Uploads(log.Character)) continue;
+                        if (log.Stale) continue;
+                        string first;
+                        if (claimed.TryGetValue(log.Character, out first))
+                        {
+                            Report("Two logs both name " + log.Character + " ("
+                                   + first + " and " + log.Path
+                                   + "). Following the first; rename or exclude one.", true);
+                            continue;
+                        }
+                        claimed[log.Character] = log.Path;
+                        wanted.Add(log.Path);
+                        EnsureStream(log);
+                    }
+
+                    // A client that closed, a character that was unticked, or a
+                    // log gone quiet for LogDiscovery.StaleSeconds. The session
+                    // is NOT closed: ACT restarts and zone crashes both look
+                    // like this, and the server ends a quiet session by itself
+                    // after 30 minutes.
+                    DropStreams(path => !wanted.Contains(path));
+
+                    if (AnyAuthFailure())
+                    {
+                        StopAllStreams(closeSession: false);
+                        lock (_lock) _status.Running = false;
+                        return;
+                    }
+
+                    Summarize(found);
+                    if (cancel.WaitHandle.WaitOne(TimeSpan.FromSeconds(5))) break;
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { Report("Stopped looking for logs: " + ex.Message, true); }
+            finally { lock (_lock) _status.Running = false; }
+        }
+
+        private void EnsureStream(DiscoveredLog log)
+        {
+            lock (_lock)
+            {
+                LogStream existing;
+                if (_streams.TryGetValue(log.Path, out existing))
+                {
+                    if (existing.IsRunning) return;
+                    _streams.Remove(log.Path);
+                }
+            }
+            var stream = new LogStream(_settings, _api, _cursors, _cursorDirectory,
+                                       log.Path, log.Character, ChatGate, ZoneFor,
+                                       OnStreamChanged);
+            lock (_lock) _streams[log.Path] = stream;
+            stream.Start();
+        }
+
+        private void DropStreams(Func<string, bool> drop)
+        {
+            var going = new List<LogStream>();
+            lock (_lock)
+            {
+                foreach (var pair in _streams)
+                    if (drop(pair.Key)) going.Add(pair.Value);
+                foreach (var stream in going) _streams.Remove(stream.Path);
+            }
+            foreach (var stream in going) stream.Stop(closeSession: false);
+        }
+
+        private void StopAllStreams(bool closeSession)
+        {
+            var going = new List<LogStream>();
+            lock (_lock)
+            {
+                going.AddRange(_streams.Values);
+                _streams.Clear();
+            }
+            foreach (var stream in going) stream.Stop(closeSession);
+        }
+
+        private bool AnyAuthFailure()
+        {
+            lock (_lock)
+            {
+                foreach (var stream in _streams.Values) if (stream.AuthFailed) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Raised by a stream whose status changed — the tab redraws
+        /// from <see cref="LogStatuses"/>, so this only has to nudge it.</summary>
+        private void OnStreamChanged() => Summarize(null);
+
+        /// <summary>Roll every stream up into the one line ACT's status bar has
+        /// room for. The tab shows the per-log detail.</summary>
+        private void Summarize(List<DiscoveredLog> found)
+        {
+            var statuses = LogStatuses();
+            var sending = new List<string>();
+            var watching = 0;
+            var lines = 0;
+            var duplicates = 0;
+            string error = null;
+            int? session = null;
+            foreach (var s in statuses)
+            {
+                lines += s.LinesSent;
+                duplicates += s.Duplicates;
+                if (s.SessionId.HasValue) session = s.SessionId;
+                if (s.IsError && error == null) error = s.Character + ": " + s.Message;
+                else if (s.Withholding) watching++;
+                else if (s.Running) sending.Add(s.Character);
+            }
+
+            string message;
+            if (error != null) message = error;
+            else if (sending.Count > 0)
+                message = "Uploading " + string.Join(", ", sending.ToArray())
+                        + (watching > 0 ? " (" + watching + " watching)" : "") + ".";
+            else if (statuses.Count > 0)
+                message = "Watching " + statuses.Count + " log"
+                        + (statuses.Count == 1 ? "" : "s") + " — nobody is fighting yet.";
+            else if (found != null && found.Count > 0)
+                message = "Found " + found.Count + " log" + (found.Count == 1 ? "" : "s")
+                        + ", none of them being written to.";
+            else
+                message = "Looking for EverQuest II logs...";
+
+            Report(message, error != null, s =>
+            {
+                s.LinesSent = lines;
+                s.Duplicates = duplicates;
+                if (session.HasValue) s.SessionId = session;
+                if (sending.Count > 0) s.LastSendUtc = DateTime.UtcNow;
+            });
+        }
+
+        /// <summary>ACT's zone, and ONLY for the log ACT is actually following.
+        /// It is a property of ACT's own parse, so stamping it on a boxed alt's
+        /// first batch would file that character's session under wherever the
+        /// main happened to be standing.</summary>
+        private string ZoneFor(string path)
+        {
+            var act = LogDiscovery.ActLogPath();
+            if (act == null || !string.Equals(act, path, StringComparison.OrdinalIgnoreCase))
+                return null;
+            return CurrentZone();
         }
 
         private static string CurrentLogPath()

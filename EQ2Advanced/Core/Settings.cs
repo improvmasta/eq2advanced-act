@@ -40,6 +40,43 @@ namespace EQ2Advanced.Core
         /// is obvious WHICH character a paired token is uploading as.</summary>
         public string CharacterName = "";
 
+        // --- multi-log (test track only; see Core/Channel.cs) ---
+
+        /// <summary>Follow every EQ2 log on this PC, not just the one ACT is
+        /// reading. Off makes the test build behave exactly like the stable
+        /// one, which is what makes it safe to leave installed.</summary>
+        public bool MultiLog = true;
+
+        /// <summary>Extra folders to look for logs in, on top of ACT's own and
+        /// its parent. Multiboxers run more than one EQ2 install and nothing
+        /// can guess where the second one lives.</summary>
+        public string[] LogFolders = new string[0];
+
+        /// <summary>Characters NOT to upload. Opt-OUT rather than opt-in: a
+        /// boxer who adds a fifth toon wants it to just work, and somebody who
+        /// has told the plugin to leave a mule alone has told it once.</summary>
+        public string[] SkipCharacters = new string[0];
+
+        /// <summary>Only send a character's log while that character is
+        /// actually fighting (see <see cref="Ingest.Participation"/>). This is
+        /// what keeps a parked alt from uploading a second observation of
+        /// everybody else's pulls.</summary>
+        public bool OnlyWhenFighting = true;
+
+        /// <summary>How long after a character's last own action their stream
+        /// stays open. Minutes, not seconds: this decides whether a RAID is
+        /// still happening, and cutting a stream between two pulls is the same
+        /// bug as cutting one mid-fight.</summary>
+        public int FightingIdleSeconds = 300;
+
+        /// <summary>Most withheld log to keep replayable while waiting to see
+        /// whether a character joins in. The withheld bytes are not queued
+        /// anywhere — the file is the queue, and this is how far back the
+        /// cursor is willing to be rewound. Past it the bytes are skipped
+        /// deliberately (and said so on the tab) rather than pinning a parked
+        /// alt's cursor at yesterday.</summary>
+        public long WithholdMaxBytes = 8L * 1024 * 1024;
+
         // --- tuning; rarely touched, but here rather than hard-coded ---
 
         /// <summary>Log seconds per batch. Batches are cut on log-second
@@ -107,6 +144,12 @@ namespace EQ2Advanced.Core
             if (CadenceSeconds > 60) CadenceSeconds = 60;
             if (ImportPauseMs < 0) ImportPauseMs = 0;
             if (ImportPauseMs > 5000) ImportPauseMs = 5000;
+            LogFolders = LogFolders ?? new string[0];
+            SkipCharacters = SkipCharacters ?? new string[0];
+            if (FightingIdleSeconds < 30) FightingIdleSeconds = 30;
+            if (FightingIdleSeconds > 3600) FightingIdleSeconds = 3600;
+            if (WithholdMaxBytes < 1024 * 1024) WithholdMaxBytes = 1024 * 1024;
+            if (WithholdMaxBytes > 256L * 1024 * 1024) WithholdMaxBytes = 256L * 1024 * 1024;
         }
 
         public bool Paired => !string.IsNullOrEmpty(Token) && !string.IsNullOrEmpty(Host);
@@ -120,12 +163,63 @@ namespace EQ2Advanced.Core
         /// Not persisted — it describes the file, not a preference.</summary>
         public bool TokenProtectedAtRest { get; private set; } = true;
 
+        /// <summary>Is this character's log to be uploaded at all?</summary>
+        public bool Uploads(string character)
+        {
+            if (string.IsNullOrEmpty(character)) return false;
+            foreach (var skip in SkipCharacters ?? new string[0])
+                if (string.Equals(skip, character, StringComparison.OrdinalIgnoreCase))
+                    return false;
+            return true;
+        }
+
+        /// <summary>Add or remove a character from <see cref="SkipCharacters"/>
+        /// and persist.</summary>
+        public void SetUploads(string character, bool uploads)
+        {
+            if (string.IsNullOrEmpty(character)) return;
+            var kept = new System.Collections.Generic.List<string>();
+            foreach (var skip in SkipCharacters ?? new string[0])
+                if (!string.Equals(skip, character, StringComparison.OrdinalIgnoreCase))
+                    kept.Add(skip);
+            if (!uploads) kept.Add(character);
+            SkipCharacters = kept.ToArray();
+            Save();
+        }
+
+        /// <summary>Add a folder to search for logs, ignoring duplicates.</summary>
+        public void AddLogFolder(string folder)
+        {
+            if (string.IsNullOrWhiteSpace(folder)) return;
+            folder = folder.Trim();
+            foreach (var known in LogFolders ?? new string[0])
+                if (string.Equals(known, folder, StringComparison.OrdinalIgnoreCase)) return;
+            var list = new System.Collections.Generic.List<string>(LogFolders ?? new string[0])
+                       { folder };
+            LogFolders = list.ToArray();
+            Save();
+        }
+
         public static Settings Load()
         {
-            var s = JsonStore.Load<Settings>();
+            // A test build with no config of its own starts from the stable
+            // build's, so the pairing carries over. Pairing again — finding the
+            // site, minting a token, pasting it into a second tab — is exactly
+            // the step at which somebody decides the test build can wait until
+            // after the raid, and then it never gets tested.
+            var seeded = Channel.MultiLog
+                         && !JsonStore.Exists(JsonStore.ConfigPath)
+                         && JsonStore.Exists(JsonStore.StableConfigPath);
+            var s = seeded ? JsonStore.LoadFrom<Settings>(JsonStore.StableConfigPath)
+                           : JsonStore.Load<Settings>();
             var raw = s.Token;
             s.TokenProtectedAtRest = TokenProtector.IsProtected(raw);
             s.Token = TokenProtector.Unprotect(raw);
+            // What is copied is the pairing, never the decision to upload. Two
+            // plugins that both started streaming because one config file was
+            // copied would be two tailers on every log — the thing LogLease
+            // exists to prevent, arrived at by a route it cannot see.
+            if (seeded) s.LiveUpload = false;
             s.AdoptNewTuning();
             s.Normalize();
             return s;

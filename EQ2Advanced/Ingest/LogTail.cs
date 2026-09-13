@@ -129,6 +129,13 @@ namespace EQ2Advanced.Ingest
         /// error on the tab.</summary>
         public string Anomaly { get; private set; }
 
+        /// <summary>How far the server has acknowledged. Read by the multi-log
+        /// participation gate, which withholds unsent bytes rather than queuing
+        /// them: the gap between this and <see cref="Offset"/> IS the withheld
+        /// log, and rewinding here replays every byte of it. Nothing else may
+        /// need it — the invariant it serves is enforced inside this class.</summary>
+        public long Acked => _acked;
+
         public string TakeAnomaly()
         {
             var value = Anomaly;

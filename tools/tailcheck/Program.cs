@@ -404,6 +404,120 @@ class Program
             File.Delete(mixedPath);
         }
 
+        // ---- 9. who is actually fighting ----
+        {
+            string L(long ts, string body) => "(" + ts + ")[Sun Aug  9 18:53:47 2026] " + body;
+
+            // A parked alt: the log is full of other people's pull, and none of
+            // it is theirs. This is the case the whole gate exists for — four
+            // boxed toons in one zone otherwise upload four observations of it.
+            var parked = new Participation("Bobby");
+            foreach (var line in new[]
+            {
+                L(1786316000, "Zylphax hits a marrow boiler for 1,204 crushing damage."),
+                L(1786316001, "a marrow boiler hits Reyfiler for 803 slashing damage."),
+                L(1786316002, "Reyfiler's Sneak Attack hits a marrow boiler for 2,001 piercing damage."),
+            }) parked.Observe(line);
+            Check(!parked.Active(300), "a character who only WATCHES a fight is not fighting");
+
+            // Being hit is not joining in: a parked toon clipped by a raid AoE,
+            // and a buffbot, both stay shut.
+            var splashed = new Participation("Bobby");
+            splashed.Observe(L(1786316003, "a marrow boiler hits YOU for 96 disease damage."));
+            splashed.Observe(L(1786316004, "\\aNPC 1 boiler:a marrow boiler\\/a says, \"Die!\""));
+            Check(!splashed.Active(300), "taking damage does not by itself start participation");
+
+            // Their own action, in each of the three forms EQ2 writes.
+            foreach (var body in new[]
+            {
+                "YOUR Lich's Siphoning hits a marrow boiler for a critical of 992 disease damage.",
+                "YOU hit a marrow boiler for 214 crushing damage.",
+                "YOU try to hit a marrow boiler, but miss.",
+                "Bobby's Throat Gash hits a marrow boiler for 1,166 piercing damage.",
+                "Bobby's blighted horde hits a marrow boiler for 621 disease damage.",
+                "You prepare the Teachings of the Underworld.",
+            })
+            {
+                var fighting = new Participation("Bobby");
+                fighting.Observe(L(1786316010, body));
+                Check(fighting.Active(300), "own action starts participation: " + body.Substring(0,
+                      Math.Min(34, body.Length)) + "...");
+            }
+
+            // A heal-only alt contributes without ever dealing damage, exactly
+            // as the server's _CONTRIBUTED counts it.
+            var healer = new Participation("Bobby");
+            healer.Observe(L(1786316010, "YOUR Sanctuary heals Zylphax for 4,102 hit points."));
+            Check(healer.Active(300), "a healer who deals no damage is still fighting");
+
+            // The gate closes on LOG time, not wall clock, so a tail catching up
+            // after a disconnect judges a pull by when it happened.
+            var lapsed = new Participation("Bobby");
+            lapsed.Observe(L(1786316010, "YOU hit a marrow boiler for 214 crushing damage."));
+            lapsed.Observe(L(1786316010 + 299, "Zylphax hits a marrow boiler for 1,204 crushing damage."));
+            Check(lapsed.Active(300), "participation survives a lull inside the idle window");
+            lapsed.Observe(L(1786316010 + 601, "Zylphax hits a marrow boiler for 1,204 crushing damage."));
+            Check(!lapsed.Active(300), "participation lapses once the character has been quiet too long");
+
+            // ...and incoming damage after an own action holds it open.
+            var held = new Participation("Bobby");
+            held.Observe(L(1786316010, "YOU hit a marrow boiler for 214 crushing damage."));
+            held.Observe(L(1786316010 + 250, "a marrow boiler hits YOU for 96 disease damage."));
+            held.Observe(L(1786316010 + 400, "Zylphax hits a marrow boiler for 1,204 crushing damage."));
+            Check(held.Active(300), "being hit EXTENDS participation even though it cannot start it");
+        }
+
+        // ---- 10. the gate withholds; it never loses ----
+        {
+            // Ten seconds of somebody else's fight, then this character joins in.
+            // LogStream reads all of it to judge it and sends none of it, so the
+            // acknowledged mark never moves — and one rewind to that mark has to
+            // give back every byte, opening seconds included.
+            var lines = new List<string>();
+            for (var s = 0; s < 10; s++)
+                for (var i = 0; i < 40; i++)
+                    lines.Add("(" + (1786317000 + s) + ")[Sun Aug  9 18:53:47 2026] "
+                              + "Zylphax hits a marrow boiler for " + i + " crushing damage.");
+            lines.Add("(1786317010)[Sun Aug  9 18:53:47 2026] "
+                      + "YOU hit a marrow boiler for 214 crushing damage.");
+            lines.Add("(1786317011)[Sun Aug  9 18:53:48 2026] "
+                      + "YOUR Lich's Siphoning hits a marrow boiler for 992 disease damage.");
+            var gatePath = WriteLog(lines);
+
+            var tail = new LogTail(2) { BulkMode = true };
+            tail.Resume(gatePath, 0);
+            var participation = new Participation("Bobby");
+            var withheld = 0;
+            while (!tail.AtEnd)
+                foreach (var batch in tail.Read())
+                {
+                    foreach (var line in batch.Lines) participation.Observe(line);
+                    withheld += batch.Lines.Count;
+                }
+            foreach (var batch in tail.Drain())
+            {
+                foreach (var line in batch.Lines) participation.Observe(line);
+                withheld += batch.Lines.Count;
+            }
+            Check(withheld > 0 && tail.Acked == 0,
+                  "reading without sending leaves the acknowledged mark at zero");
+            Check(participation.Active(300),
+                  "the gate opens on the line where the character joins in");
+
+            // The replay: rewind to the ack and read the file again.
+            tail.Rewind(tail.Acked);
+            var replayed = new List<string>();
+            while (!tail.AtEnd) replayed.AddRange(tail.Read().SelectMany(b => b.Lines));
+            replayed.AddRange(tail.Drain().SelectMany(b => b.Lines));
+            Check(replayed.Count == lines.Count && replayed.SequenceEqual(lines),
+                  "rewinding to the ack replays every withheld line, in order ("
+                  + replayed.Count + "/" + lines.Count + ")");
+            Check(tail.TakeAnomaly() == null,
+                  "replaying withheld log is not an anomaly — those bytes were never acknowledged");
+
+            File.Delete(gatePath);
+        }
+
         File.Delete(path);
         Console.WriteLine(failures == 0 ? "\nALL PASS" : "\n" + failures + " FAILED");
         Environment.Exit(failures == 0 ? 0 : 1);
