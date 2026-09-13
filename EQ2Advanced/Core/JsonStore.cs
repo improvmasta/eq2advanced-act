@@ -26,30 +26,15 @@ namespace EQ2Advanced.Core
             }
         }
 
-        /// <summary>This BUILD's settings. Per channel, so a test build cannot
-        /// write its half-finished state into the config the stable uploader
-        /// reads on its next start.</summary>
+        /// <summary>The plugin's settings. One file, whichever build wrote it:
+        /// the test track replaces the stable DLL rather than sitting beside
+        /// it, so it inherits the pairing instead of asking for it again.</summary>
         public static string ConfigPath
             => Path.Combine(ConfigDirectory, Channel.ConfigFileName);
 
-        /// <summary>The stable build's settings, read once to seed a fresh test
-        /// track config. See <see cref="Channel.StableConfigFileName"/>.</summary>
-        public static string StableConfigPath
-            => Path.Combine(ConfigDirectory, Channel.StableConfigFileName);
-
-        /// <summary>
-        /// Acknowledged offsets and tail leases, SHARED BY EVERY CHANNEL and
-        /// deliberately not derived from <see cref="ConfigPath"/>.
-        ///
-        /// A per-channel cursor directory would mean the stable build and the
-        /// test build each keep their own idea of how far the server has read a
-        /// given log — so enabling both would have them tail the same file from
-        /// two different offsets, cutting the same log second into batches two
-        /// different ways. The server's line dedupe keys on a line's ordinal
-        /// within its batch, so that is not a duplicate-and-drop, it is a real
-        /// repeated hit silently swallowed. One directory, one cursor per file,
-        /// one lease per file (`LogLease`) — and the two builds coexist.
-        /// </summary>
+        /// <summary>Acknowledged offsets and tail leases. Swapping one build for
+        /// the other therefore resumes every log exactly where the server had
+        /// got to, rather than starting them over at EOF.</summary>
         public static string CursorDirectory
             => Path.Combine(ConfigDirectory, "EQ2Advanced.Cursors");
 

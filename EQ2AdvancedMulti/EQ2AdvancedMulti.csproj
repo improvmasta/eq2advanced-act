@@ -8,22 +8,24 @@
     at the stable project's files, and the only thing that differs is a handful
     of constants in Core/Channel.cs.
 
-    Why a separate ASSEMBLY rather than one DLL with a setting: ACT loads every
-    plugin into one AppDomain and lists them by assembly, so two files claiming
-    the identity `EQ2Advanced` cannot both be added. A test track that replaced
-    the working uploader on disk would not be a test track - the whole promise
-    is that the stable one is still sitting there, one checkbox away, when a
-    raid starts in ten minutes.
+    It produces EQ2Advanced.dll, the same assembly name as the stable build, in
+    its own output folder. That is deliberate: the test build REPLACES the
+    plugin rather than installing beside it, so a raider drops this DLL over
+    the old one and keeps their tab, their pairing and their cursors. Two
+    projects exist only so both builds can be produced and served from one
+    push - never so both can be loaded at once.
 
     Its version moves independently (Core/Channel.cs), and it reports a
-    different User-Agent product token, so a test build can never put an update
-    pill in front of somebody running the stable DLL.
+    different User-Agent product token, so the site can tell which build
+    somebody is on without ever offering them the other as an "update".
   -->
 
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
     <OutputType>Library</OutputType>
-    <AssemblyName>EQ2AdvancedMulti</AssemblyName>
+    <!-- The same name as the stable build: this is a replacement DLL, and the
+         output folder is what keeps the two builds apart on disk. -->
+    <AssemblyName>EQ2Advanced</AssemblyName>
     <RootNamespace>EQ2Advanced</RootNamespace>
     <LangVersion>9.0</LangVersion>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

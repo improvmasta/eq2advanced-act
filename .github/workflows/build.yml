@@ -31,11 +31,13 @@ jobs:
           path: EQ2Advanced/bin/Release/EQ2Advanced.dll
           if-no-files-found: error
 
-      - name: Upload EQ2AdvancedMulti.dll
+      # Same filename as the stable build - it is a replacement DLL, and the
+      # artifact name is what tells the two apart.
+      - name: Upload the multi-log test build
         uses: actions/upload-artifact@v4
         with:
           name: EQ2AdvancedMulti
-          path: EQ2AdvancedMulti/bin/Release/EQ2AdvancedMulti.dll
+          path: EQ2AdvancedMulti/bin/Release/EQ2Advanced.dll
           if-no-files-found: error
 
       - name: Attach DLL to release (on v* tag)
@@ -44,4 +46,3 @@ jobs:
         with:
           files: |
             EQ2Advanced/bin/Release/EQ2Advanced.dll
-            EQ2AdvancedMulti/bin/Release/EQ2AdvancedMulti.dll

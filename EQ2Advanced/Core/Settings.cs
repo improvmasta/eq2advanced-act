@@ -202,24 +202,10 @@ namespace EQ2Advanced.Core
 
         public static Settings Load()
         {
-            // A test build with no config of its own starts from the stable
-            // build's, so the pairing carries over. Pairing again — finding the
-            // site, minting a token, pasting it into a second tab — is exactly
-            // the step at which somebody decides the test build can wait until
-            // after the raid, and then it never gets tested.
-            var seeded = Channel.MultiLog
-                         && !JsonStore.Exists(JsonStore.ConfigPath)
-                         && JsonStore.Exists(JsonStore.StableConfigPath);
-            var s = seeded ? JsonStore.LoadFrom<Settings>(JsonStore.StableConfigPath)
-                           : JsonStore.Load<Settings>();
+            var s = JsonStore.Load<Settings>();
             var raw = s.Token;
             s.TokenProtectedAtRest = TokenProtector.IsProtected(raw);
             s.Token = TokenProtector.Unprotect(raw);
-            // What is copied is the pairing, never the decision to upload. Two
-            // plugins that both started streaming because one config file was
-            // copied would be two tailers on every log — the thing LogLease
-            // exists to prevent, arrived at by a route it cannot see.
-            if (seeded) s.LiveUpload = false;
             s.AdoptNewTuning();
             s.Normalize();
             return s;

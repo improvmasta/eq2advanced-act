@@ -12,9 +12,8 @@ namespace EQ2Advanced.Ingest
     ///
     /// THIS IS A CORRECTNESS GUARD, NOT TIDINESS. Until now each ACT followed a
     /// different file, so two instances tailing the same log could not happen.
-    /// Reading every log makes it the default: two ACTs on one PC, or the
-    /// stable uploader and this test build enabled side by side, and every one
-    /// of them finds all four logs.
+    /// Reading every log makes it the default: boxers routinely run one ACT per
+    /// client, and every one of those finds all four logs.
     ///
     /// The reason that is not merely wasteful is the server's line dedupe
     /// (`backend/pipeline/live.py`): its key is the occurrence ordinal of a line
@@ -27,8 +26,6 @@ namespace EQ2Advanced.Ingest
     /// plugin is built to never have.
     ///
     /// So: one tailer per file, decided by a lease file next to the cursor.
-    /// It is deliberately in the SHARED cursor directory rather than a per
-    /// channel one — a lease the other build cannot see protects nothing.
     ///
     /// Crash safety comes from the heartbeat plus the owning process's identity
     /// (pid AND its start time, because Windows reuses pids). A lease whose

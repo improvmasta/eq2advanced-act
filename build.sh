@@ -31,7 +31,7 @@ echo "==> EQ2Advanced.dll"
 dotnet build EQ2Advanced.sln -c "$CONFIG" --nologo -v minimal
 
 DLL="EQ2Advanced/bin/$CONFIG/EQ2Advanced.dll"
-MULTI="EQ2AdvancedMulti/bin/$CONFIG/EQ2AdvancedMulti.dll"
+MULTI="EQ2AdvancedMulti/bin/$CONFIG/EQ2Advanced.dll"
 echo
 echo "Built: $DLL"
-echo "Built: $MULTI   (multi-log test track)"
+echo "Built: $MULTI   (multi-log test track - replaces the DLL above)"
