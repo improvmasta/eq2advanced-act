@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using EQ2Advanced.Core;
 using EQ2Advanced.Net;
@@ -226,7 +227,43 @@ namespace EQ2Advanced.Ingest
                     var stalled = false;
                     if (!open)
                     {
+                        Exception publicError = null;
+                        if (_settings.SharePublicChat)
+                        {
+                            foreach (var batch in batches)
+                            {
+                                var publicLines = new List<string>();
+                                foreach (var line in batch.Lines)
+                                {
+                                    string body;
+                                    if (ChatFilter.TrySplitBody(line, out body)
+                                        && ChatFilter.Classify(body) == ChatChannel.Public)
+                                        publicLines.Add(line);
+                                }
+                                if (publicLines.Count == 0) continue;
+                                try
+                                {
+                                    _api.SendPublicChat(Character, publicLines, cancel);
+                                    failures = 0;
+                                }
+                                catch (OperationCanceledException) { throw; }
+                                catch (Exception ex)
+                                {
+                                    // The combat cursor is intentionally held.
+                                    // Rewind the read cursor to this complete
+                                    // batch so a failed relay is retried from
+                                    // the log file, never an in-memory queue.
+                                    tail.Rewind(batch.StartOffset);
+                                    failures++;
+                                    stalled = true;
+                                    publicError = ex;
+                                    break;
+                                }
+                            }
+                        }
                         Withhold(tail, ref lastBatchEnd);
+                        if (publicError != null)
+                            Report("Public chat retrying: " + publicError.Message, true);
                     }
                     else
                     {
@@ -298,7 +335,7 @@ namespace EQ2Advanced.Ingest
             }
             Report(held > 0
                 ? "Watching — holding " + (held / 1024) + " KB until " + Character
-                  + " joins in."
+                  + " joins in." + (_settings.SharePublicChat ? " Public chat is separate." : "")
                 : "Watching — " + Character + " is not fighting.",
                 false, s => s.Withholding = true);
         }

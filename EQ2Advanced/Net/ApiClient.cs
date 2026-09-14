@@ -234,6 +234,23 @@ namespace EQ2Advanced.Net
             return result;
         }
 
+        /// <summary>Relay only the opted-in public channels while this
+        /// character's combat log is held by the fighting gate. This creates
+        /// no raid session; the site rechecks every line by channel name.</summary>
+        public int SendPublicChat(string character, IList<string> lines,
+                                  CancellationToken cancel)
+        {
+            var payload = new Dictionary<string, object>
+            {
+                { "character", character }, { "lines", lines },
+            };
+            var root = Obj(JsonStore.Deserialize(
+                Send("/api/ingest/public-chat", "POST", payload, cancel)));
+            object count;
+            return root != null && root.TryGetValue("accepted", out count)
+                ? Convert.ToInt32(count) : 0;
+        }
+
         /// <summary>Close the open session. The server then rebuilds it from raw
         /// through the bulk parser, which is what makes a streamed night
         /// identical to an uploaded file.</summary>

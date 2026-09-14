@@ -21,7 +21,7 @@ namespace EQ2Advanced.Core
     {
 #if MULTILOG
         public const bool MultiLog = true;
-        public const string Version = "0.3.0";
+        public const string Version = "0.3.1";
         public const string UserAgentProduct = "eq2advanced-act-multi";
         public const string Title = "eq2advanced uploader - multi-log test build";
 #else
