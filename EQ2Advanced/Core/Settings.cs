@@ -21,6 +21,12 @@ namespace EQ2Advanced.Core
         public string Host = "https://eq2advanced.com";
         public string Token = "";
 
+        /// <summary>Check for a newer build when the ACT tab opens.</summary>
+        public bool AutoUpdateCheck = true;
+
+        /// <summary>Release declined in the update prompt.</summary>
+        public string SkippedUpdate = "";
+
         /// <summary>Send new log lines as they are written.</summary>
         public bool LiveUpload = false;
 
@@ -138,6 +144,7 @@ namespace EQ2Advanced.Core
             Host = Host.Trim().TrimEnd('/');
             Token = (Token ?? "").Trim();
             CharacterName = CharacterName ?? "";
+            SkippedUpdate = SkippedUpdate ?? "";
             if (WindowSeconds < 1) WindowSeconds = 1;
             if (WindowSeconds > 60) WindowSeconds = 60;
             if (CadenceSeconds < 0) CadenceSeconds = 0;

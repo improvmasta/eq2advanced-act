@@ -1,6 +1,9 @@
 using System;
 using System.Drawing;
+using System.Net;
 using System.Threading;
+using System.Threading.Tasks;
+using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using EQ2Advanced.Core;
 using EQ2Advanced.Ingest;
@@ -37,6 +40,10 @@ namespace EQ2Advanced.Ui
         private ProgressBar _backfillProgress;
         private Label _importStatus;
         private CancellationTokenSource _importCancel;
+        private CheckBox _autoUpdate;
+        private Button _checkUpdates;
+        private Label _updateStatus;
+        private System.Windows.Forms.Timer _updateCheckTimer;
 
         // --- multi-log (test track only; see Core/Channel.cs) ---
         private CheckBox _multiLog;
@@ -58,6 +65,12 @@ namespace EQ2Advanced.Ui
             Build();
             _uploader.StatusChanged += OnUploaderStatus;
             RefreshPairingAsync();
+            _updateCheckTimer = new System.Windows.Forms.Timer { Interval = 4000 };
+            _updateCheckTimer.Tick += (s, e) => {
+                _updateCheckTimer.Stop();
+                CheckForUpdate(false);
+            };
+            if (_settings.AutoUpdateCheck) _updateCheckTimer.Start();
         }
 
         protected override void Dispose(bool disposing)
@@ -66,6 +79,7 @@ namespace EQ2Advanced.Ui
             {
                 _uploader.StatusChanged -= OnUploaderStatus;
                 if (_logRefresh != null) { _logRefresh.Stop(); _logRefresh.Dispose(); }
+                _updateCheckTimer?.Dispose();
             }
             base.Dispose(disposing);
         }
@@ -210,6 +224,31 @@ namespace EQ2Advanced.Ui
             backfill.Controls.Add(_backfillProgress);
             backfill.Controls.Add(_importStatus);
 
+            var updates = new GroupBox {
+                Text = "Updates", Dock = DockStyle.Top, Height = 110,
+                Padding = new Padding(12, 8, 12, 10),
+            };
+            _autoUpdate = new CheckBox {
+                Text = "Check for updates when ACT starts", Dock = DockStyle.Top,
+                Height = 24, Checked = _settings.AutoUpdateCheck,
+            };
+            _autoUpdate.CheckedChanged += (s, e) => {
+                _settings.AutoUpdateCheck = _autoUpdate.Checked;
+                _settings.Save();
+                if (_autoUpdate.Checked) _updateCheckTimer?.Start();
+                else _updateCheckTimer?.Stop();
+            };
+            _checkUpdates = new Button { Text = "Check now", Dock = DockStyle.Top,
+                                          Height = 28, Width = 110 };
+            _checkUpdates.Click += (s, e) => CheckForUpdate(true);
+            _updateStatus = new Label { Dock = DockStyle.Top, Height = 22,
+                                         ForeColor = SystemColors.GrayText };
+            updates.Controls.Add(_updateStatus);
+            updates.Controls.Add(_checkUpdates);
+            updates.Controls.Add(_autoUpdate);
+
+            root.Controls.Add(updates);
+            root.Controls.Add(Gap());
             root.Controls.Add(backfill);
             root.Controls.Add(Gap());
             // Compiled into BOTH builds and only shown in one. `Channel.MultiLog`
@@ -227,6 +266,98 @@ namespace EQ2Advanced.Ui
             Controls.Add(root);
 
             ApplyPairedState();
+        }
+
+        private async void CheckForUpdate(bool manual)
+        {
+            if (!_checkUpdates.Enabled) return;
+            _checkUpdates.Enabled = false;
+            if (manual) _updateStatus.Text = "Checking…";
+            try
+            {
+                var route = Channel.MultiLog ? "/api/plugin/multi" : "/api/plugin";
+                var raw = await Task.Run(() => {
+                    ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+                    using (var web = new WebClient())
+                        return web.DownloadString(_settings.Host + route);
+                });
+                if (IsDisposed) return;
+                var release = new JavaScriptSerializer()
+                    .Deserialize<System.Collections.Generic.Dictionary<string, object>>(raw);
+                if (release == null || !release.ContainsKey("available")
+                    || !true.Equals(release["available"]))
+                    throw new InvalidOperationException("No release is available.");
+                var version = release.ContainsKey("version") ? release["version"] as string : null;
+                Version current, next;
+                if (!Version.TryParse(Channel.Version, out current)
+                    || !Version.TryParse(version, out next))
+                    throw new InvalidOperationException("Release version is invalid.");
+                if (next <= current) {
+                    if (manual) _updateStatus.Text = "Already up to date.";
+                    return;
+                }
+                var releaseKey = (Channel.MultiLog ? "multi:" : "stable:") + version;
+                if (_settings.SkippedUpdate == releaseKey) {
+                    if (manual) _updateStatus.Text = "This release was skipped.";
+                    return;
+                }
+                var notes = release.ContainsKey("notes") ? release["notes"] as string : null;
+                var result = ShowUpdatePrompt(version, notes ?? "");
+                if (result == DialogResult.Yes) Open(_settings.Host + "/account#account-downloads");
+                if (result == DialogResult.No) {
+                    _settings.SkippedUpdate = releaseKey;
+                    _settings.Save();
+                    _updateStatus.Text = "Release " + version + " skipped.";
+                }
+            }
+            catch (Exception ex) {
+                if (manual && !IsDisposed) _updateStatus.Text = "Update check failed: " + ex.Message;
+            }
+            finally { if (!IsDisposed) _checkUpdates.Enabled = true; }
+        }
+
+        private DialogResult ShowUpdatePrompt(string version, string notes)
+        {
+            using (var popup = new Form {
+                Text = "EQ2Advanced update", Width = 520, Height = 320,
+                StartPosition = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MinimizeBox = false, MaximizeBox = false,
+            }) {
+                var heading = new Label {
+                    Text = "EQ2Advanced " + version + " available", Dock = DockStyle.Top,
+                    Height = 35, Padding = new Padding(12, 10, 0, 0),
+                    Font = new Font(Font, FontStyle.Bold),
+                };
+                var changes = new TextBox {
+                    Text = notes, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
+                    Dock = DockStyle.Fill, BorderStyle = BorderStyle.None,
+                    BackColor = SystemColors.Control,
+                };
+                var guidance = new Label {
+                    Text = "Get the DLL from Account. Close ACT, replace the DLL, then reopen ACT.",
+                    Dock = DockStyle.Bottom, Height = 34, Padding = new Padding(12, 6, 0, 0),
+                };
+                var actions = new FlowLayoutPanel {
+                    Dock = DockStyle.Bottom, Height = 43, FlowDirection = FlowDirection.RightToLeft,
+                    Padding = new Padding(8, 5, 8, 0),
+                };
+                var later = new Button { Text = "Later", Width = 84, DialogResult = DialogResult.Cancel };
+                var skip = new Button { Text = "Skip this release", Width = 125,
+                                        DialogResult = DialogResult.No };
+                var get = new Button { Text = "Get update", Width = 90,
+                                       DialogResult = DialogResult.Yes };
+                actions.Controls.Add(later);
+                actions.Controls.Add(skip);
+                actions.Controls.Add(get);
+                popup.Controls.Add(changes);
+                popup.Controls.Add(guidance);
+                popup.Controls.Add(actions);
+                popup.Controls.Add(heading);
+                popup.AcceptButton = get;
+                popup.CancelButton = later;
+                return popup.ShowDialog(FindForm());
+            }
         }
 
         /// <summary>
