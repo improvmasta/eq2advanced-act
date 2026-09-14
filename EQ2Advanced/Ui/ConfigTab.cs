@@ -82,6 +82,8 @@ namespace EQ2Advanced.Ui
             Padding = new Padding(0, 2, 0, 6),
         };
 
+        private static Control Gap() => new Panel { Dock = DockStyle.Top, Height = 10 };
+
         private void Build()
         {
             Dock = DockStyle.Fill;
@@ -94,7 +96,10 @@ namespace EQ2Advanced.Ui
             var root = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
 
             // --- 1. pairing ---
-            var pairing = new GroupBox { Text = "This device", Dock = DockStyle.Top, Height = 160 };
+            var pairing = new GroupBox {
+                Text = "Connect your account", Dock = DockStyle.Top, Height = 150,
+                Padding = new Padding(12, 8, 12, 10),
+            };
             _tokenWarning = new Label
             {
                 Dock = DockStyle.Top, Height = 32, ForeColor = Color.Firebrick, Visible = false,
@@ -111,18 +116,18 @@ namespace EQ2Advanced.Ui
             pairRow.Controls.Add(_pairButton);
             pairing.Controls.Add(pairRow);
             pairing.Controls.Add(Note(
-                "Paste the pairing code (or the eq2advanced:// link) from the "
-                + "Import page on eq2advanced.com. One code covers every character "
-                + "you play — the plugin reads the name off the log. It only lets "
-                + "this PC send logs."));
+                "Get the combat log key from Account → Keys. One key covers every character on this PC."));
             pairing.Controls.Add(_pairedAs);
             pairing.Controls.Add(_tokenWarning);
 
             // --- 2. uploading ---
-            var uploading = new GroupBox { Text = "Uploading", Dock = DockStyle.Top, Height = 254 };
+            var uploading = new GroupBox {
+                Text = "Live combat upload", Dock = DockStyle.Top, Height = 166,
+                Padding = new Padding(12, 8, 12, 10),
+            };
             _live = new CheckBox
             {
-                Text = "Send my combat log to eq2advanced as I play",
+                Text = "Upload combat logs while ACT is running",
                 Dock = DockStyle.Top,
                 Height = 24,
                 Checked = _settings.LiveUpload,
@@ -130,8 +135,7 @@ namespace EQ2Advanced.Ui
             _live.CheckedChanged += OnLiveToggled;
             _shareChat = new CheckBox
             {
-                Text = "Also send my group and raid chat during fights (optional) "
-                     + "— example: loot tracking",
+                Text = "Include group and raid chat during fights",
                 Dock = DockStyle.Top,
                 Height = 24,
                 Checked = _settings.ShareChat,
@@ -139,7 +143,7 @@ namespace EQ2Advanced.Ui
             _shareChat.CheckedChanged += OnShareChatToggled;
             _sharePublicChat = new CheckBox
             {
-                Text = "Contribute my General/LFG/Auction chat to the site's public chat page (optional)",
+                Text = "Share General, LFG, and Auction chat publicly",
                 Dock = DockStyle.Top,
                 Height = 24,
                 Checked = _settings.SharePublicChat,
@@ -155,32 +159,36 @@ namespace EQ2Advanced.Ui
                 _sessionId.HasValue ? _api.SessionUrl(_sessionId.Value) : _settings.Host);
             var manageShares = new LinkLabel
             {
-                Dock = DockStyle.Top, Height = 20,
-                Text = "Choose who can see your raids on eq2advanced.com",
+                Dock = DockStyle.Top, Height = 20, Text = "Manage raid sharing",
             };
-            manageShares.LinkClicked += (s, e) => Open(_settings.Host + "/import");
+            manageShares.LinkClicked += (s, e) => Open(_settings.Host + "/groups");
             var privacyLink = new LinkLabel
             {
                 Dock = DockStyle.Top, Height = 20, Text = "What gets sent, in full — eq2advanced.com/privacy",
             };
             privacyLink.LinkClicked += (s, e) => Open(_settings.Host + "/privacy");
             uploading.Controls.Add(manageShares);
-            uploading.Controls.Add(privacyLink);
             uploading.Controls.Add(_openSite);
             uploading.Controls.Add(_status);
             uploading.Controls.Add(Note(
-                "Fights appear on the site as each one ends — a raid in progress fills in "
-                + "fight by fight. Stop uploading (or close ACT) to finish the night."));
-            uploading.Controls.Add(Note(
-                "Always sent: combat log, NPC dialogue. Never sent: tells, guild chat, "
-                + "officer chat, /say. The two checkboxes below are the only optional part."));
-            uploading.Controls.Add(_sharePublicChat);
-            uploading.Controls.Add(_shareChat);
+                "Fights appear as they end. Stop uploading or close ACT to finish the session."));
             uploading.Controls.Add(_live);
 
+            var chat = new GroupBox {
+                Text = "Chat options", Dock = DockStyle.Top, Height = 155,
+                Padding = new Padding(12, 8, 12, 10),
+            };
+            chat.Controls.Add(privacyLink);
+            chat.Controls.Add(Note(
+                "Tells, guild chat, officer chat, and /say are never uploaded."));
+            chat.Controls.Add(_sharePublicChat);
+            chat.Controls.Add(_shareChat);
+
             // --- 3. import old logs ---
-            var backfill = new GroupBox { Text = "Import logs you already have",
-                                          Dock = DockStyle.Top, Height = 168 };
+            var backfill = new GroupBox {
+                Text = "Upload older logs", Dock = DockStyle.Top, Height = 145,
+                Padding = new Padding(12, 8, 12, 10),
+            };
             _importStatus = new Label { Dock = DockStyle.Bottom, Height = 32, Text = "" };
             _backfillProgress = new ProgressBar { Dock = DockStyle.Bottom, Height = 16, Visible = false };
             var importRow = new Panel { Dock = DockStyle.Top, Height = 30 };
@@ -198,22 +206,23 @@ namespace EQ2Advanced.Ui
             importRow.Controls.Add(_backfill);
             backfill.Controls.Add(importRow);
             backfill.Controls.Add(Note(
-                "Pick as many as you like — a whole folder of old logs is fine. They go up one "
-                + "at a time, paced so a big import doesn't swamp the server, and each log "
-                + "becomes its own night. Re-sending a log you already uploaded is safe: the "
-                + "server keeps only the lines it hasn't seen. Stop and resume any time."));
+                "Select one or more old EQ2 logs. Already uploaded lines are skipped."));
             backfill.Controls.Add(_backfillProgress);
             backfill.Controls.Add(_importStatus);
 
             root.Controls.Add(backfill);
+            root.Controls.Add(Gap());
             // Compiled into BOTH builds and only shown in one. `Channel.MultiLog`
             // is a constant, so the stable build warns that the call is
             // unreachable — which is the point: the panel still type-checks
             // against every change made to the stable half of this file.
 #pragma warning disable 162
-            if (Channel.MultiLog) root.Controls.Add(BuildMultiLog());
+            if (Channel.MultiLog) { root.Controls.Add(BuildMultiLog()); root.Controls.Add(Gap()); }
 #pragma warning restore 162
+            root.Controls.Add(chat);
+            root.Controls.Add(Gap());
             root.Controls.Add(uploading);
+            root.Controls.Add(Gap());
             root.Controls.Add(pairing);
             Controls.Add(root);
 
@@ -233,8 +242,10 @@ namespace EQ2Advanced.Ui
         /// </summary>
         private GroupBox BuildMultiLog()
         {
-            var group = new GroupBox { Text = "Logs on this PC (test build)",
-                                       Dock = DockStyle.Top, Height = 258 };
+            var group = new GroupBox {
+                Text = "Multiple characters (test build)", Dock = DockStyle.Top, Height = 295,
+                Padding = new Padding(12, 8, 12, 10),
+            };
 
             _logs = new ListView
             {
@@ -258,7 +269,7 @@ namespace EQ2Advanced.Ui
 
             _onlyWhenFighting = new CheckBox
             {
-                Text = "Only upload a character while they are actually fighting",
+                Text = "Hold each character's log until they fight",
                 Dock = DockStyle.Top,
                 Height = 24,
                 Checked = _settings.OnlyWhenFighting,
@@ -270,7 +281,7 @@ namespace EQ2Advanced.Ui
             };
             _multiLog = new CheckBox
             {
-                Text = "Follow every EverQuest II log on this PC, not just ACT's",
+                Text = "Follow every EQ2 log in the selected folders",
                 Dock = DockStyle.Top,
                 Height = 24,
                 Checked = _settings.MultiLog,
@@ -280,9 +291,7 @@ namespace EQ2Advanced.Ui
             group.Controls.Add(_logs);
             group.Controls.Add(buttons);
             group.Controls.Add(Note(
-                "Nothing is thrown away while a character is being watched: the log "
-                + "file is the queue, so the moment they swing, everything since is "
-                + "sent — the opening of the pull included."));
+                "Held lines stay in the log and upload when that character fights."));
             group.Controls.Add(_onlyWhenFighting);
             group.Controls.Add(_multiLog);
 

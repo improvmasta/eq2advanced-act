@@ -22,7 +22,7 @@ namespace EQ2Advanced
         /// versions independently (<see cref="Channel.Version"/>) so a test
         /// build can move without putting an update pill in front of everybody
         /// running the stable one.</summary>
-        public const string StableVersion = "0.2.3";
+        public const string StableVersion = "0.2.4";
 
         /// <summary>What THIS build calls itself, on the tab and on the wire.</summary>
         public const string Version = Channel.Version;
