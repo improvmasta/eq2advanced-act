@@ -26,12 +26,27 @@ Filtering happens in the plugin. See `EQ2Advanced/Ingest/ChatFilter.cs`. Full po
 
 ## Install and pair
 
-1. In ACT: **Plugins → Plugin Listing → Browse**, pick `EQ2Advanced.dll`,
+1. Download **EQ2Advanced - ACT Uploader** from **Account → Downloads**. Unblock
+   the ZIP in Windows Properties, then extract `EQ2Advanced.dll` and
+   `EQ2AdvancedUpdater.exe` together into ACT's Plugins folder.
+2. In ACT: **Plugins → Plugin Listing → Browse**, pick `EQ2Advanced.dll`,
    **Add/Enable**. An **eq2advanced** tab appears.
-2. On eq2advanced.com, open **Import → Plugin setup** and copy the API key.
-3. Paste the key into the plugin's **This device** box and hit **Pair**. One key
+3. On eq2advanced.com, open **Account → Keys** and copy a combat log key.
+4. Paste the key into **Connect your account** and hit **Pair**. One key
    covers every character you play; the plugin reads the name off the log file.
-4. Tick **Send my combat log to eq2advanced as I play**.
+5. Tick **Upload combat logs while ACT is running**.
+
+The plugin checks for updates when ACT starts unless you turn that option off.
+It shows release notes and offers Update, Skip this release, or Later. Update
+downloads and verifies both files, then installs them after ACT closes. You can
+restart ACT from the prompt or let the update install on your next exit. Older
+installations without `EQ2AdvancedUpdater.exe` need this one manual package
+install first.
+
+Use **EQ2Advanced - ACT Uploader (Multibox Support)** in place of the regular
+uploader when several characters run at once. Both packages have the same DLL
+name, so install only one. The multibox build can follow every EQ2 log in the
+selected folders and has its own update track.
 
 Settings persist to `<ACT AppData>\Config\EQ2Advanced.json`.
 
@@ -56,6 +71,8 @@ EQ2Advanced/
   Ingest/LogTail.cs         verbatim file tailing, second-boundary batch cutting
   Ingest/Uploader.cs        the worker: live tailing + backfill
   Ui/ConfigTab.cs           the eq2advanced tab inside ACT
+  Ui/UpdateInstaller.cs    verifies and stages uploader updates
+EQ2AdvancedUpdater/        waits for ACT to close, swaps both files, restarts ACT
 tools/fetch-act.sh          downloads the genuine ACT to build against
 Thirdparty/ACT/             that download (not committed)
 ```

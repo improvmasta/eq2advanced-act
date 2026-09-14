@@ -38,7 +38,7 @@
     <Description>Test build: follows every EverQuest II log on this PC, not just the one ACT is reading.</Description>
     <Authors>EQ2Advanced</Authors>
     <!-- Keep in step with Channel.Version. -->
-    <Version>0.3.3</Version>
+    <Version>0.3.4</Version>
 
     <ACTPath Condition="'$(ACTPath)' == ''">$(MSBuildThisFileDirectory)..\Thirdparty\ACT</ACTPath>
 
@@ -67,6 +67,7 @@
     <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Security" />
+    <Reference Include="System.IO.Compression" />
   </ItemGroup>
 
   <ItemGroup>

@@ -29,7 +29,7 @@
     <Product>eq2advanced</Product>
     <Description>Sends EverQuest II combat logs to eq2advanced.com as you raid.</Description>
     <Authors>EQ2Advanced</Authors>
-    <Version>0.2.5</Version>
+    <Version>0.2.6</Version>
 
     <ACTPath Condition="'$(ACTPath)' == ''">$(MSBuildThisFileDirectory)..\Thirdparty\ACT</ACTPath>
   </PropertyGroup>
@@ -53,6 +53,7 @@
     <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Net.Http" />
     <Reference Include="System.Security" />
+    <Reference Include="System.IO.Compression" />
   </ItemGroup>
 
   <!-- ACT host. Not copied to output (Private=false); supplied by ACT at runtime.

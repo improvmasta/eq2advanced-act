@@ -1,10 +1,12 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using Advanced_Combat_Tracker;
 using EQ2Advanced.Core;
 using EQ2Advanced.Ingest;
 using EQ2Advanced.Net;
@@ -23,6 +25,7 @@ namespace EQ2Advanced.Ui
     public class ConfigTab : UserControl
     {
         private readonly Settings _settings;
+        private readonly EQ2AdvancedPlugin _plugin;
         private readonly ApiClient _api;
         private readonly Uploader _uploader;
 
@@ -57,8 +60,9 @@ namespace EQ2Advanced.Ui
         private int? _sessionId;
         private string _account;
 
-        public ConfigTab(Settings settings, ApiClient api, Uploader uploader)
+        public ConfigTab(EQ2AdvancedPlugin plugin, Settings settings, ApiClient api, Uploader uploader)
         {
+            _plugin = plugin;
             _settings = settings;
             _api = api;
             _uploader = uploader;
@@ -273,6 +277,7 @@ namespace EQ2Advanced.Ui
             if (!_checkUpdates.Enabled) return;
             _checkUpdates.Enabled = false;
             if (manual) _updateStatus.Text = "Checking…";
+            var attemptedInstall = false;
             try
             {
                 var route = Channel.MultiLog ? "/api/plugin/multi" : "/api/plugin";
@@ -303,7 +308,33 @@ namespace EQ2Advanced.Ui
                 }
                 var notes = release.ContainsKey("notes") ? release["notes"] as string : null;
                 var result = ShowUpdatePrompt(version, notes ?? "");
-                if (result == DialogResult.Yes) Open(_settings.Host + "/account#account-downloads");
+                if (result == DialogResult.Yes) {
+                    attemptedInstall = true;
+                    var zipHash = release.ContainsKey("download_sha256")
+                        ? release["download_sha256"] as string : null;
+                    var dllHash = release.ContainsKey("sha256")
+                        ? release["sha256"] as string : null;
+                    if (string.IsNullOrEmpty(zipHash) || string.IsNullOrEmpty(dllHash))
+                        throw new InvalidOperationException("Release checksums are missing.");
+                    _updateStatus.Text = "Downloading verified update…";
+                    var download = Channel.MultiLog ? "/api/plugin/multi/download"
+                                                    : "/api/plugin/download";
+                    var folder = PluginFolder();
+                    var stage = await UpdateInstaller.StageAsync(_settings.Host, download,
+                        folder, version, Channel.MultiLog ? "multi" : "stable", zipHash, dllHash);
+                    if (IsDisposed) return;
+                    _updateStatus.Text = "Update ready. It installs when ACT closes.";
+                    if (ShowRestartPrompt() == DialogResult.Yes) {
+                        try {
+                            UpdateInstaller.RequestRestart(stage);
+                            ActGlobals.oFormActMain.Close();
+                        }
+                        catch {
+                            File.Delete(Path.Combine(stage, "restart.json"));
+                            throw;
+                        }
+                    }
+                }
                 if (result == DialogResult.No) {
                     _settings.SkippedUpdate = releaseKey;
                     _settings.Save();
@@ -311,7 +342,8 @@ namespace EQ2Advanced.Ui
                 }
             }
             catch (Exception ex) {
-                if (manual && !IsDisposed) _updateStatus.Text = "Update check failed: " + ex.Message;
+                if ((manual || attemptedInstall) && !IsDisposed)
+                    _updateStatus.Text = "Update failed: " + ex.Message;
             }
             finally { if (!IsDisposed) _checkUpdates.Enabled = true; }
         }
@@ -335,7 +367,7 @@ namespace EQ2Advanced.Ui
                     BackColor = SystemColors.Control,
                 };
                 var guidance = new Label {
-                    Text = "Get the DLL from Account. Close ACT, replace the DLL, then reopen ACT.",
+                    Text = "Update downloads and verifies both files, then installs after ACT closes.",
                     Dock = DockStyle.Bottom, Height = 34, Padding = new Padding(12, 6, 0, 0),
                 };
                 var actions = new FlowLayoutPanel {
@@ -345,7 +377,7 @@ namespace EQ2Advanced.Ui
                 var later = new Button { Text = "Later", Width = 84, DialogResult = DialogResult.Cancel };
                 var skip = new Button { Text = "Skip this release", Width = 125,
                                         DialogResult = DialogResult.No };
-                var get = new Button { Text = "Get update", Width = 90,
+                var get = new Button { Text = "Update", Width = 90,
                                        DialogResult = DialogResult.Yes };
                 actions.Controls.Add(later);
                 actions.Controls.Add(skip);
@@ -358,6 +390,48 @@ namespace EQ2Advanced.Ui
                 popup.CancelButton = later;
                 return popup.ShowDialog(FindForm());
             }
+        }
+
+        private DialogResult ShowRestartPrompt()
+        {
+            using (var popup = new Form {
+                Text = "EQ2Advanced update ready", Width = 475, Height = 165,
+                StartPosition = FormStartPosition.CenterParent,
+                FormBorderStyle = FormBorderStyle.FixedDialog,
+                MinimizeBox = false, MaximizeBox = false,
+            }) {
+                var note = new Label {
+                    Text = "The update is staged. Restart ACT now, or let it install when you next close ACT.",
+                    Dock = DockStyle.Fill, Padding = new Padding(12, 16, 12, 0),
+                };
+                var actions = new FlowLayoutPanel {
+                    Dock = DockStyle.Bottom, Height = 46, FlowDirection = FlowDirection.RightToLeft,
+                    Padding = new Padding(8, 5, 8, 0),
+                };
+                var later = new Button { Text = "Later", Width = 90, DialogResult = DialogResult.Cancel };
+                var restart = new Button { Text = "Restart ACT now", Width = 135,
+                                           DialogResult = DialogResult.Yes };
+                actions.Controls.Add(later);
+                actions.Controls.Add(restart);
+                popup.Controls.Add(note);
+                popup.Controls.Add(actions);
+                popup.AcceptButton = restart;
+                popup.CancelButton = later;
+                return popup.ShowDialog(FindForm());
+            }
+        }
+
+        private string PluginFolder()
+        {
+            var plugins = ActGlobals.oFormActMain.ActPlugins;
+            if (plugins != null)
+                foreach (var entry in plugins)
+                    if (ReferenceEquals(entry.pluginObj, _plugin) && entry.pluginFile != null
+                        && !string.IsNullOrWhiteSpace(entry.pluginFile.DirectoryName))
+                        return entry.pluginFile.DirectoryName;
+            var location = typeof(EQ2AdvancedPlugin).Assembly.Location;
+            if (!string.IsNullOrWhiteSpace(location)) return Path.GetDirectoryName(location);
+            throw new FileNotFoundException("ACT could not locate EQ2Advanced.dll.");
         }
 
         /// <summary>

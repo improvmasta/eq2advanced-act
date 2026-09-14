@@ -29,9 +29,13 @@ bash tools/fetch-act.sh
 
 echo "==> EQ2Advanced.dll"
 dotnet build EQ2Advanced.sln -c "$CONFIG" --nologo -v minimal
+dotnet build EQ2AdvancedUpdater/EQ2AdvancedUpdater.csproj -c "$CONFIG" --nologo -v minimal
+dotnet run --project tools/updatercheck/updatercheck.csproj -c "$CONFIG"
 
 DLL="EQ2Advanced/bin/$CONFIG/EQ2Advanced.dll"
 MULTI="EQ2AdvancedMulti/bin/$CONFIG/EQ2Advanced.dll"
+UPDATER="EQ2AdvancedUpdater/bin/$CONFIG/EQ2AdvancedUpdater.exe"
 echo
 echo "Built: $DLL"
 echo "Built: $MULTI   (multi-log test track - replaces the DLL above)"
+echo "Built: $UPDATER"

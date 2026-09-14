@@ -22,7 +22,7 @@ namespace EQ2Advanced
         /// versions independently (<see cref="Channel.Version"/>) so a test
         /// build can move without putting an update pill in front of everybody
         /// running the stable one.</summary>
-        public const string StableVersion = "0.2.5";
+        public const string StableVersion = "0.2.6";
 
         /// <summary>What THIS build calls itself, on the tab and on the wire.</summary>
         public const string Version = Channel.Version;
@@ -49,7 +49,7 @@ namespace EQ2Advanced
                 _uploader = new Uploader(_settings, api);
                 _uploader.StatusChanged += OnStatus;
 
-                _tab = new ConfigTab(_settings, api, _uploader);
+                _tab = new ConfigTab(this, _settings, api, _uploader);
                 pluginScreenSpace.Controls.Add(_tab);
 
                 // Resume where we left off: someone who ticked "upload as I play"

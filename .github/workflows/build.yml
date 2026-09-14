@@ -24,20 +24,24 @@ jobs:
         shell: bash
         run: bash build.sh
 
-      - name: Upload EQ2Advanced.dll
+      - name: Upload stable updater package
         uses: actions/upload-artifact@v4
         with:
           name: EQ2Advanced
-          path: EQ2Advanced/bin/Release/EQ2Advanced.dll
+          path: |
+            EQ2Advanced/bin/Release/EQ2Advanced.dll
+            EQ2AdvancedUpdater/bin/Release/EQ2AdvancedUpdater.exe
           if-no-files-found: error
 
       # Same filename as the stable build - it is a replacement DLL, and the
       # artifact name is what tells the two apart.
-      - name: Upload the multi-log test build
+      - name: Upload the multi-log updater package
         uses: actions/upload-artifact@v4
         with:
           name: EQ2AdvancedMulti
-          path: EQ2AdvancedMulti/bin/Release/EQ2Advanced.dll
+          path: |
+            EQ2AdvancedMulti/bin/Release/EQ2Advanced.dll
+            EQ2AdvancedUpdater/bin/Release/EQ2AdvancedUpdater.exe
           if-no-files-found: error
 
       - name: Attach DLL to release (on v* tag)

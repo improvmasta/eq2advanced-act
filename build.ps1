@@ -60,8 +60,12 @@ Write-Host ""
 
 dotnet build (Join-Path $root "EQ2Advanced.sln") -c $Config -p:ACTPath="$ActPath"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+dotnet build (Join-Path $root "EQ2AdvancedUpdater\EQ2AdvancedUpdater.csproj") -c $Config
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $dll = Join-Path $root "EQ2Advanced\bin\$Config\EQ2Advanced.dll"
+$updater = Join-Path $root "EQ2AdvancedUpdater\bin\$Config\EQ2AdvancedUpdater.exe"
 Write-Host ""
 Write-Host "Built: $dll" -ForegroundColor Green
-Write-Host "In ACT: Plugins -> Plugin Listing -> Browse -> pick that file -> Add/Enable."
+Write-Host "Built: $updater" -ForegroundColor Green
+Write-Host "Copy both files into ACT's Plugins folder, then add EQ2Advanced.dll in Plugin Listing."
